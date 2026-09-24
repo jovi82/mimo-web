@@ -780,21 +780,47 @@ wss.on("connection", (ws, req) => {
   ws.on("error", cleanup);
 });
 
-server.listen(PORT, HOST, () => {
-  const nets = require("os").networkInterfaces();
-  const ips = [];
-  for (const list of Object.values(nets)) {
-    for (const n of list || []) {
-      if (n.family === "IPv4" && !n.internal) ips.push(n.address);
+// Bind dual-stack (::) when HOST means "all interfaces", so
+// http://localhost:<port> still works when localhost resolves to ::1 first.
+// Falls back to plain IPv4 if the machine has no usable IPv6 stack.
+function startListening(bindHost) {
+  const onListening = () => {
+    server.removeListener("error", onError);
+    const nets = require("os").networkInterfaces();
+    const ips = [];
+    for (const list of Object.values(nets)) {
+      for (const n of list || []) {
+        if (n.family === "IPv4" && !n.internal) ips.push(n.address);
+      }
     }
-  }
-  console.log("MiMoCode LAN web terminal + chat + phone capture");
-  console.log(`  local:   http://127.0.0.1:${PORT}`);
-  for (const ip of ips) console.log(`  phone:   http://${ip}:${PORT}`);
-  console.log(`  project: ${termCwd}`);
-  console.log(`  presets: ${projects.presets.map((p) => p.name).join(", ") || "(none)"}`);
-  console.log(`  command: ${START_CMD}  (cwd = project)`);
-  console.log(`  inbox:   ${path.join(termCwd, INBOX_SUBDIR)}`);
-  console.log(`  chat:    ${MIMO_BIN ? MIMO_BIN : "not found"}`);
-  console.log(`  tts:     ${TTS_KEY ? TTS_MODEL + " / " + (TTS.voice || TTS_DEFAULT_VOICE) + " / " + TTS_FORMAT : "not configured"}`);
-});
+    console.log("MiMoCode LAN web terminal + chat + phone capture");
+    console.log(`  local:   http://127.0.0.1:${PORT}`);
+    if (bindHost === undefined || bindHost === "::") console.log(`  local6:  http://[::1]:${PORT}`);
+    for (const ip of ips) console.log(`  phone:   http://${ip}:${PORT}`);
+    console.log(`  project: ${termCwd}`);
+    console.log(`  presets: ${projects.presets.map((p) => p.name).join(", ") || "(none)"}`);
+    console.log(`  command: ${START_CMD}  (cwd = project)`);
+    console.log(`  inbox:   ${path.join(termCwd, INBOX_SUBDIR)}`);
+    console.log(`  chat:    ${MIMO_BIN ? MIMO_BIN : "not found"}`);
+    console.log(`  tts:     ${TTS_KEY ? TTS_MODEL + " / " + (TTS.voice || TTS_DEFAULT_VOICE) + " / " + TTS_FORMAT : "not configured"}`);
+  };
+
+  const onError = (err) => {
+    const ipv6Codes = ["EADDRNOTAVAIL", "EAFNOSUPPORT", "EACCES"];
+    if ((bindHost === undefined || bindHost === "::") && ipv6Codes.includes(err.code)) {
+      console.warn(`  IPv6 bind failed (${err.code}) — falling back to IPv4 ${HOST}`);
+      startListening(HOST);
+      return;
+    }
+    console.error(`  listen failed: ${err.message}`);
+    process.exit(1);
+  };
+
+  server.once("listening", onListening);
+  server.once("error", onError);
+  if (bindHost === undefined) server.listen(PORT);
+  else server.listen(PORT, bindHost);
+}
+
+const wantAllInterfaces = !HOST || HOST === "0.0.0.0" || HOST === "::";
+startListening(wantAllInterfaces ? undefined : HOST);

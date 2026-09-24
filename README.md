@@ -1,10 +1,14 @@
 # mimo-web · MiMoCode 手机/局域网网页端
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 把电脑上的 **MiMoCode（mimo CLI）** 开到局域网里：手机、平板、别的电脑，
 在浏览器打开一个地址，就能直接对着电脑上的项目目录聊天改文件、敲终端、
 让 mimo 读图改代码 —— 所有设备看到的是**同一份本地文件**，不存在"同步"问题。
 
 > 像豆包的手机端 / 电脑端一样，只不过"云端"就是你自己的这台电脑。
+
+**仓库**：https://github.com/jovi82/mimo-web
 
 ---
 
