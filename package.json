@@ -1,0 +1,14 @@
+{
+  "name": "mimo-web",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "node-pty": "^1.1.0",
+    "ws": "^8.19.0"
+  }
+}

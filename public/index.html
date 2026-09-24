@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>MiMoCode 手机/局域网页端</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --line: #243041;
+      --fg: #d7e0ea;
+      --muted: #8aa0b5;
+      --accent: #38bdf8;
+      --ok: #34d399;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+    }
+    /* mobile browsers: use the dynamic viewport so the URL bar / keyboard
+       do not clip the layout; fall back to 100% where dvh is unsupported. */
+    @supports (height: 100dvh) {
+      html, body { height: 100dvh; }
+    }
+    body {
+      display: flex; flex-direction: column;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, select, input, textarea { touch-action: manipulation; font-family: inherit; }
+    header {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+      padding: calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 8px calc(10px + env(safe-area-inset-left));
+      background: var(--panel); border-bottom: 1px solid var(--line);
+      font-size: 13px; position: sticky; top: 0; z-index: 5;
+    }
+    header strong { font-size: 13px; }
+    .meta { color: var(--muted); font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status { color: var(--muted); }
+    .status.on { color: var(--ok); }
+    .status.off { color: var(--err); }
+    .proj-bar {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      padding: 8px calc(10px + env(safe-area-inset-right)) 8px calc(10px + env(safe-area-inset-left));
+      background: #0e141c; border-bottom: 1px solid var(--line);
+      font-size: 12px; color: var(--muted);
+    }
+    .proj-bar select, .proj-bar input {
+      min-height: 40px; border-radius: 8px; border: 1px solid var(--line);
+      background: #182231; color: var(--fg); font-size: 16px; padding: 0 8px;
+    }
+    .proj-bar select { max-width: 180px; }
+    .proj-bar input { flex: 1; min-width: 160px; }
+    .proj-bar button {
+      min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--accent);
+      background: #182231; color: var(--accent); font-size: 14px; cursor: pointer;
+    }
+    #projHint { flex: 1 0 100%; color: var(--muted); font-size: 11px; }
+    .proj-toggle { display: none; }
+    .proj-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: 1; }
+    nav.tabs {
+      display: flex; gap: 6px; padding: 8px calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
+      background: var(--panel); border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+    }
+    nav.tabs button {
+      flex: 1; min-width: 72px; min-height: 44px; border: 1px solid var(--line); background: #0e141c; color: var(--fg);
+      border-radius: 10px 10px 0 0; font-size: 14px; cursor: pointer;
+    }
+    nav.tabs button.active { background: #182231; border-color: var(--accent); color: var(--accent); }
+    main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .panel { display: none; flex: 1; min-height: 0; flex-direction: column; }
+    .panel.active { display: flex; }
+    #term { flex: 1; min-height: 0; padding: 6px; }
+    #term .xterm { height: 100%; }
+    .term-bar {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      padding: 6px 8px; background: #0e141c; border-top: 1px solid var(--line);
+      font-size: 12px; color: var(--muted);
+    }
+    .term-bar button {
+      min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line);
+      background: #182231; color: var(--fg); font-size: 13px; cursor: pointer;
+    }
+    .term-bar button.primary { border-color: var(--accent); color: var(--accent); }
+    .term-bar button:disabled { opacity: 0.45; cursor: default; }
+    .term-bar select {
+      min-height: 36px; border-radius: 8px; border: 1px solid var(--line);
+      background: #182231; color: var(--fg); font-size: 13px; padding: 0 6px;
+    }
+    .term-bar .hint { flex: 1; min-width: 100px; }
+    .keys {
+      display: flex; gap: 6px; overflow-x: auto; padding: 6px; background: #0e141c; border-top: 1px solid var(--line);
+      -webkit-overflow-scrolling: touch;
+    }
+    .keys button {
+      min-width: 48px; min-height: 40px; border-radius: 8px; border: 1px solid var(--line);
+      background: #182231; color: var(--fg); font-size: 13px; flex: 0 0 auto;
+    }
+    .scroll { overflow: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px;
+    }
+    h2 { margin: 0 0 8px; font-size: 16px; }
+    p.hint { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    input[type="file"] { width: 100%; font-size: 15px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    button.primary, button.ghost {
+      min-height: 42px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line);
+      font-size: 14px; cursor: pointer;
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #041018; font-weight: 600; }
+    button.ghost { background: #182231; color: var(--fg); }
+    .filelist { list-style: none; margin: 0; padding: 0; }
+    .filelist li {
+      display: flex; align-items: center; gap: 8px; justify-content: space-between;
+      padding: 10px 4px; border-bottom: 1px solid var(--line); font-size: 14px;
+    }
+    .filelist .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .filelist .sub { color: var(--muted); font-size: 11px; }
+    .filelist button {
+      min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line);
+      background: #182231; color: var(--fg); font-size: 12px; cursor: pointer; flex: 0 0 auto;
+    }
+    .crumbs { color: var(--muted); font-size: 12px; margin-bottom: 8px; word-break: break-all; }
+    /* chat */    .chat-toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 8px 10px; border-bottom: 1px solid var(--line); background: #0e141c; font-size: 13px;
+    }
+    .chat-toolbar .chk { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+    select.mini, button.mini {
+      min-height: 34px; font-size: 13px; padding: 0 8px; border-radius: 8px;
+      border: 1px solid var(--line); background: #182231; color: var(--fg);
+    }
+    .chat-log { flex: 1; min-height: 0; overflow: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+    .msg { display: flex; margin-bottom: 12px; }
+    .msg.user { justify-content: flex-end; }
+    .bubble {
+      max-width: 86%; border-radius: 14px; padding: 10px 12px; font-size: 14px; line-height: 1.55;
+      white-space: pre-wrap; word-break: break-word; border: 1px solid var(--line);
+    }
+    .msg.user .bubble { background: #1d4ed8; border-color: #1d4ed8; color: #fff; border-bottom-right-radius: 4px; }
+    .msg.assistant .bubble { background: var(--panel); border-bottom-left-radius: 4px; }
+    .msg.sys .bubble { background: #1a2330; color: var(--muted); font-size: 12px; }
+    .bubble .tools { margin-top: 6px; font-size: 11px; color: var(--muted); }
+    .bubble .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .bubble .actions button {
+      min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line);
+      background: #182231; color: var(--fg); font-size: 12px; cursor: pointer;
+    }
+    .bubble .actions button.speaking { border-color: var(--accent); color: var(--accent); }
+    .bubble .cost { font-size: 11px; color: var(--muted); }
+    .chat-input {
+      display: flex; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line); background: var(--panel);
+    }
+    .chat-input textarea {
+      flex: 1; min-width: 0; min-height: 44px; max-height: 140px; resize: none; background: #0e141c; color: var(--fg);
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 16px; font-family: inherit;
+    }
+    .chat-input button { flex: 0 0 auto; min-width: 72px; min-height: 44px; border-radius: 10px; }
+    .thinking { color: var(--muted); font-size: 13px; }
+    #ttsToast {
+      position: fixed; left: 50%; bottom: calc(72px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+      max-width: min(92vw, 420px); padding: 8px 14px; border-radius: 999px;
+      background: #182231; border: 1px solid var(--line); color: var(--muted);
+      font-size: 13px; z-index: 50; pointer-events: none; opacity: 0; transition: opacity .2s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #ttsToast.show { opacity: 1; }
+    #ttsToast.err { border-color: var(--err); color: var(--err); }
+    #ttsToast.ok { border-color: var(--ok); color: var(--ok); }
+    @media (min-width: 900px) {
+      .keys { display: none; }
+      nav.tabs { max-width: 520px; }
+    }
+    /* ---- phones: compact chrome, no iOS input zoom, roomy tap targets ---- */
+    @media (max-width: 640px) {
+      header { padding-top: calc(6px + env(safe-area-inset-top)); }
+      .proj-bar { padding-top: 6px; padding-bottom: 6px; }
+      /* project picker collapses to one line until tapped */
+      .proj-toggle { display: block; flex: 1; text-align: left; }
+      .proj-edit { display: none; flex: 1 0 100%; }
+      .proj-bar.open .proj-edit { display: flex; }
+      .proj-bar select, .proj-bar input { flex: 1; min-width: 0; max-width: none; font-size: 16px; }
+      #projHint { display: none; }
+      .proj-bar.open #projHint { display: block; }
+      .chat-toolbar { gap: 6px; padding: 6px 8px; }
+      .chat-toolbar button.mini, .chat-toolbar select.mini { min-height: 40px; font-size: 14px; }
+      .bubble .actions button { min-height: 40px; font-size: 13px; }
+      .keys button { min-width: 52px; min-height: 44px; font-size: 14px; }
+      .term-bar button, .term-bar select { min-height: 40px; font-size: 14px; }
+      .term-bar .hint { display: none; }
+      #ttsToast { bottom: calc(84px + env(safe-area-inset-bottom)); font-size: 12px; max-width: 94vw; }
+      .chat-log { padding: 8px; }
+      .bubble { max-width: 92%; }
+      .row button, button.primary, button.ghost { min-height: 44px; }
+    }
+    @media (max-width: 400px) {
+      header strong { font-size: 12px; }
+      nav.tabs button { min-width: 60px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>MiMoCode · 手机/局域网页端</strong>
+      <div class="meta" id="projectMeta">项目加载中…</div>
+    </div>
+    <span class="status" id="status">连接中…</span>
+  </header>
+
+  <div class="proj-bar" id="projBar">
+    <button class="proj-toggle" id="btnProjToggle" type="button">📁 <span id="projNow">项目</span> ▾</button>
+    <div class="proj-edit">
+      <select id="projectSelect" title="常用文件夹"></select>
+      <input id="projectPath" placeholder="或直接输入文件夹路径，例如 G:\website\其他项目" spellcheck="false" />
+      <button id="btnSwitchProject" type="button">切换项目</button>
+    </div>
+    <div id="projHint">切换会重启终端与对话（正在跑的任务会停止）</div>
+  </div>
+
+  <nav class="tabs">
+    <button type="button" class="active" data-tab="chat">对话</button>
+    <button type="button" data-tab="term">终端</button>
+    <button type="button" data-tab="files">文件</button>
+  </nav>
+  <div id="ttsToast" role="status" aria-live="polite"></div>
+
+  <main>
+    <section id="tab-term" class="panel">
+      <div id="term"></div>
+      <div class="term-bar">
+        <button id="btnSpeakSel" class="primary" type="button" disabled>🔊 朗读</button>
+        <button id="btnCopySel" type="button" disabled>📋 复制</button>
+        <button id="btnStopSpeak" type="button">⏹ 停止</button>
+        <select id="ttsVoice" title="音色"></select>
+        <span class="hint">拖选文字后朗读/复制</span>
+      </div>
+      <div class="keys" id="softKeys">
+        <button data-key="escape">Esc</button>
+        <button data-key="tab">Tab</button>
+        <button data-key="\x03">Ctrl+C</button>
+        <button data-key="\x04">Ctrl+D</button>
+        <button data-key="\r">Enter</button>
+        <button data-key="\x1b[A">↑</button>
+        <button data-key="\x1b[B">↓</button>
+        <button data-key="\x1b[D">←</button>
+        <button data-key="\x1b[C">→</button>
+        <button data-key="/">/</button>
+      </div>
+    </section>
+
+    <section id="tab-chat" class="panel active">
+      <div class="chat-toolbar">
+        <button class="ghost mini" id="btnCamera" type="button">📷 拍照</button>
+        <button class="ghost mini" id="btnPickImg" type="button">🖼 图片/文件</button>
+        <button class="ghost mini" id="btnNote" type="button">✍️ 文字</button>
+        <label class="chk"><input type="checkbox" id="autoSpeak" /> 自动朗读回复</label>
+        <select id="chatVoice" class="mini" title="音色"></select>
+        <button class="ghost mini" id="btnChatStop" type="button">停止朗读</button>
+        <button class="ghost mini" id="btnChatNew" type="button">新会话</button>
+      </div>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none" />
+      <input id="imgInput" type="file" accept="image/*,application/pdf,text/*" multiple style="display:none" />
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-input">
+        <textarea id="chatText" placeholder="用自然语言让 mimo 改项目里的文件（Enter 发送）" rows="2"></textarea>
+        <button class="primary" id="btnChatSend" type="button">发送</button>
+      </div>
+    </section>
+
+    <section id="tab-files" class="panel">
+      <div class="scroll">
+        <div class="card">
+          <h2>项目文件</h2>
+          <p class="hint" id="filesProject">项目加载中…</p>
+          <div class="crumbs" id="crumbs">/</div>
+          <div class="row" style="margin-top:0;margin-bottom:8px">
+            <button class="ghost" id="btnUp" type="button">上级</button>
+            <button class="ghost" id="btnRefresh" type="button">刷新</button>
+            <button class="ghost" id="btnInbox" type="button">收件箱</button>
+            <button class="primary" id="btnMimoFolder" type="button">让 mimo 改这个文件夹</button>
+          </div>
+          <ul class="filelist" id="filelist"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script>
+    const statusEl = document.getElementById("status");
+    const projectMeta = document.getElementById("projectMeta");
+    const ttsToast = document.getElementById("ttsToast");
+    let currentPath = "";
+    let ws = null;
+    let toastTimer = 0;
+
+    function setTtsMsg(t, cls) {
+      if (!t) { ttsToast.classList.remove("show", "err", "ok"); return; }
+      ttsToast.textContent = t;
+      ttsToast.className = "show" + (cls === "err" ? " err" : cls === "ok" ? " ok" : "");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => ttsToast.classList.remove("show"), 4000);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function stripAnsi(s) {
+      return String(s || "")
+        .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+        .replace(/\x1b\][^\x07]*\x07/g, "")
+        .replace(/\x1b[()][A-Za-z0-9]/g, "")
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "")
+        .replace(/\r/g, "");
+    }
+
+    // tabs
+    document.querySelectorAll("nav.tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("nav.tabs button").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+        if (btn.dataset.tab === "term") setTimeout(() => { fit.fit(); term.focus(); }, 50);
+        if (btn.dataset.tab === "files") loadFiles(currentPath);
+      });
+    });
+    function switchTab(name) {
+      document.querySelector(`nav.tabs button[data-tab="${name}"]`).click();
+    }
+
+    // terminal
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: window.innerWidth < 600 ? 12 : 14,
+      fontFamily: "Consolas, 'Courier New', monospace",
+      theme: { background: "#0b0f14", foreground: "#d7e0ea", cursor: "#7dd3fc" },
+      scrollback: 8000,
+      allowProposedApi: true,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById("term"));
+    fit.fit();
+
+    function selectionText() { return stripAnsi(term.getSelection() || "").trim(); }
+    function updateSelButtons() {
+      const has = Boolean(selectionText());
+      document.getElementById("btnSpeakSel").disabled = !has;
+      document.getElementById("btnCopySel").disabled = !has;
+    }
+    term.onSelectionChange(updateSelButtons);
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}`);
+      ws.onopen = () => {
+        statusEl.textContent = "已连接";
+        statusEl.className = "status on";
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      };
+      ws.onclose = () => {
+        statusEl.textContent = "已断开，3秒重连";
+        statusEl.className = "status off";
+        setTimeout(connect, 3000);
+      };
+      ws.onerror = () => {
+        statusEl.textContent = "连接错误";
+        statusEl.className = "status off";
+      };
+      ws.onmessage = (ev) => { if (typeof ev.data === "string") term.write(ev.data); };
+    }
+    connect();
+
+    term.onData((data) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "input", data }));
+    });
+    term.onResize(({ cols, rows }) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "resize", cols, rows }));
+    });
+    function sendKey(seq) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "input", data: seq }));
+        term.focus();
+      }
+    }
+    document.getElementById("softKeys").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-key]");
+      if (!b) return;
+      const raw = b.getAttribute("data-key");
+      if (raw.startsWith("\\x")) sendKey(String.fromCharCode(parseInt(raw.slice(2), 16)));
+      else if (raw === "escape") sendKey("\x1b");
+      else if (raw === "tab") sendKey("\t");
+      else sendKey(raw);
+    });
+    window.addEventListener("resize", () => fit.fit());
+    window.addEventListener("orientationchange", () => setTimeout(() => fit.fit(), 200));
+    // Mobile keyboards resize the visual viewport without firing window resize,
+    // which leaves the terminal sized wrong — refit whenever it changes.
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", () => setTimeout(() => fit.fit(), 60));
+    }
+
+    // status / project
+    fetch("/api/status").then((r) => r.json()).then((s) => {
+      projectMeta.textContent = s.project;
+      window.__project = s.project;
+      const fp = document.getElementById("filesProject");
+      if (fp) fp.textContent = "项目目录：" + s.project;
+      const now = document.getElementById("projNow");
+      if (now) now.textContent = String(s.project).split(/[\\/]/).filter(Boolean).pop() || s.project;
+    }).catch(() => {
+      projectMeta.textContent = "无法读取项目路径";
+    });
+
+    // phone view: project picker is collapsed until tapped
+    const projBar = document.getElementById("projBar");
+    document.getElementById("btnProjToggle").onclick = () => {
+      projBar.classList.toggle("open");
+    };
+
+    // ---- project switcher ----
+    const projectSelect = document.getElementById("projectSelect");
+    const projectPath = document.getElementById("projectPath");
+    const projHint = document.getElementById("projHint");
+
+    function renderPresets(active, presets) {
+      projectSelect.innerHTML = "";
+      for (const p of presets || []) {
+        const o = document.createElement("option");
+        o.value = p.path;
+        o.textContent = p.name ? `${p.name} — ${p.path}` : p.path;
+        if (p.path === active) o.selected = true;
+        projectSelect.appendChild(o);
+      }
+      if (active) projectPath.value = active;
+      const now = document.getElementById("projNow");
+      if (now && active) now.textContent = String(active).split(/[\\/]/).filter(Boolean).pop() || active;
+    }
+
+    fetch("/api/projects").then((r) => r.json()).then((d) => {
+      renderPresets(d.active, d.presets);
+    }).catch(() => {
+      projHint.textContent = "无法读取常用文件夹列表";
+    });
+
+    projectSelect.onchange = () => { projectPath.value = projectSelect.value; };
+
+    document.getElementById("btnSwitchProject").onclick = async () => {
+      const target = (projectPath.value || projectSelect.value || "").trim();
+      if (!target) { setTtsMsg("请选择或输入文件夹路径", "err"); return; }
+      const btn = document.getElementById("btnSwitchProject");
+      btn.disabled = true;
+      setTtsMsg("正在切换项目…");
+      try {
+        const r = await fetch("/api/project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: target }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+        try { localStorage.setItem("lastProject", d.project); } catch {}
+        setTtsMsg("已切换到 " + d.project + "，正在重载…", "ok");
+        setTimeout(() => location.reload(), 700);
+      } catch (e) {
+        setTtsMsg("切换失败: " + (e.message || e), "err");
+        btn.disabled = false;
+      }
+    };
+
+    // ---- TTS ----
+    const btnSpeakSel = document.getElementById("btnSpeakSel");
+    const btnCopySel = document.getElementById("btnCopySel");
+    const ttsVoiceSel = document.getElementById("ttsVoice");
+    const chatVoice = document.getElementById("chatVoice");
+    let ttsAudio = null, ttsUrl = null, ttsReady = false, ttsPlayToken = 0, onTtsState = null;
+    let ttsDefaultVoice = "mimo_default";
+    let ttsActive = false;
+
+    function stopTts(silent) {
+      const wasActive = ttsActive;
+      ttsActive = false;
+      ttsPlayToken++;
+      if (ttsAudio) { try { ttsAudio.pause(); } catch {} ttsAudio = null; }
+      if (ttsUrl) { URL.revokeObjectURL(ttsUrl); ttsUrl = null; }
+      if (typeof onTtsState === "function") onTtsState(false);
+      onTtsState = null;
+      if (!silent && wasActive) setTtsMsg("已停止");
+    }
+
+    function chunkText(s, max) {
+      const out = [];
+      const sentences = String(s).split(/(?<=[。！？!?；;\n])/);
+      let cur = "";
+      for (const raw of sentences) {
+        const seg = raw.replace(/[ \t]+/g, " ").trim();
+        if (!seg) continue;
+        if ((cur + seg).length > max && cur) { out.push(cur); cur = ""; }
+        if (seg.length > max) {
+          for (let i = 0; i < seg.length; i += max) out.push(seg.slice(i, i + max));
+        } else {
+          cur += (cur && /[A-Za-z0-9]$/.test(cur) ? " " : "") + seg;
+        }
+      }
+      if (cur) out.push(cur);
+      return out.filter(Boolean);
+    }
+
+    async function ttsFetch(text, voice) {
+      const r = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.slice(0, 2000), voice }),
+      });
+      if (!r.ok) {
+        let msg = "HTTP " + r.status;
+        try { msg = (await r.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      return r.blob();
+    }
+
+    async function speak(text, voice, onState) {
+      const clean = stripAnsi(text).trim();
+      if (!clean) { setTtsMsg("没有可朗读的文字", "err"); return; }
+      if (!ttsReady) { setTtsMsg("TTS 未配置，无法朗读", "err"); return; }
+      const useVoice = voice || chatVoice.value || ttsVoiceSel.value || ttsDefaultVoice;
+      stopTts(true);
+      const token = ++ttsPlayToken;
+      onTtsState = onState || null;
+      const parts = chunkText(clean, 110);
+      try {
+        if (onTtsState) onTtsState(true);
+        ttsActive = true;
+        setTtsMsg(`合成中…（${clean.length} 字 / ${parts.length} 段）`);
+        for (let i = 0; i < parts.length; i++) {
+          if (token !== ttsPlayToken) return;
+          const blob = await ttsFetch(parts[i], useVoice);
+          if (token !== ttsPlayToken) return;
+          const url = URL.createObjectURL(blob);
+          ttsUrl = url;
+          await new Promise((resolve, reject) => {
+            const a = new Audio(url);
+            ttsAudio = a;
+            a.onended = resolve;
+            a.onerror = () => reject(new Error("播放失败"));
+            a.play().catch(reject);
+          });
+          URL.revokeObjectURL(url);
+          if (ttsUrl === url) ttsUrl = null;
+          setTtsMsg(`播放中… ${i + 1}/${parts.length}`, "ok");
+        }
+        if (token === ttsPlayToken) {
+          ttsActive = false;
+          setTtsMsg("播放完成", "ok");
+          if (onTtsState) onTtsState(false);
+          onTtsState = null;
+        }
+      } catch (e) {
+        if (token === ttsPlayToken) {
+          ttsActive = false;
+          setTtsMsg("失败: " + (e.message || e), "err");
+          if (onTtsState) onTtsState(false);
+          onTtsState = null;
+        }
+      }
+    }
+
+    function fillVoiceSelect(sel) {
+      sel.innerHTML = "";
+      for (const v of (window.__voices || [])) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        if (v === ttsDefaultVoice) o.selected = true;
+        sel.appendChild(o);
+      }
+    }
+
+    fetch("/api/tts-config")
+      .then((r) => r.json())
+      .then((c) => {
+        ttsReady = Boolean(c.enabled);
+        ttsDefaultVoice = c.defaultVoice || "mimo_default";
+        window.__voices = c.voices || [];
+        fillVoiceSelect(ttsVoiceSel);
+        fillVoiceSelect(chatVoice);
+        if (!ttsReady) setTtsMsg("TTS 未配置密钥", "err");
+      })
+      .catch(() => setTtsMsg("无法读取 TTS 配置", "err"));
+
+    btnSpeakSel.onclick = () => {
+      const sel = selectionText();
+      if (!sel) { setTtsMsg("先在终端里拖选文字", "err"); term.focus(); return; }
+      speak(sel);
+    };
+    document.getElementById("btnStopSpeak").onclick = () => stopTts();
+    btnCopySel.onclick = async () => {
+      const sel = selectionText();
+      if (!sel) { setTtsMsg("先在终端里拖选文字", "err"); return; }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(sel);
+        else {
+          const ta = document.createElement("textarea");
+          ta.value = sel; ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        setTtsMsg(`已复制 ${sel.length} 字`, "ok");
+      } catch (e) { setTtsMsg("复制失败", "err"); }
+    };
+
+    // ---- files ----
+    function fmtSize(n) {
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / 1024 / 1024).toFixed(1) + " MB";
+    }
+    async function loadFiles(rel) {
+      const list = document.getElementById("filelist");
+      const crumbs = document.getElementById("crumbs");
+      list.innerHTML = "<li><span class='name'>加载中…</span></li>";
+      try {
+        const r = await fetch("/api/files?path=" + encodeURIComponent(rel || ""));
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || "error");
+        currentPath = data.path || "";
+        crumbs.textContent = (window.__project || "") + (currentPath ? "/" + currentPath : "");
+        list.innerHTML = "";
+        if (!data.files.length) {
+          list.innerHTML = "<li><span class='name'>（空目录）</span></li>";
+          return;
+        }
+        for (const f of data.files) {
+          const li = document.createElement("li");
+          const left = document.createElement("div");
+          left.className = "name";
+          left.innerHTML = `<div>${f.dir ? "📁 " : "📄 "}${escapeHtml(f.name)}</div><div class="sub">${f.dir ? "文件夹" : fmtSize(f.size)}</div>`;
+          const right = document.createElement("div");
+          right.style.display = "flex"; right.style.gap = "6px";
+          if (f.dir) {
+            const open = document.createElement("button");
+            open.textContent = "打开"; open.onclick = () => loadFiles(f.path);
+            const ask = document.createElement("button");
+            ask.textContent = "问 mimo";
+            ask.onclick = () => askMimo(`看看文件夹 ${f.path} 里有什么，简要说明用途`);
+            right.appendChild(open); right.appendChild(ask);
+          } else {
+            const use = document.createElement("button");
+            use.textContent = "发给 mimo";
+            use.onclick = () => askMimo(`请处理文件 ${f.path}`);
+            const dl = document.createElement("button");
+            dl.textContent = "下载";
+            dl.onclick = () => { location.href = "/api/download?path=" + encodeURIComponent(f.path); };
+            right.appendChild(use); right.appendChild(dl);
+          }
+          li.appendChild(left); li.appendChild(right);
+          list.appendChild(li);
+        }
+      } catch (e) {
+        list.innerHTML = "<li><span class='name'>加载失败: " + escapeHtml(String(e.message || e)) + "</span></li>";
+      }
+    }
+    document.getElementById("btnRefresh").onclick = () => loadFiles(currentPath);
+    document.getElementById("btnUp").onclick = () => {
+      if (!currentPath) return;
+      const parts = currentPath.split("/").filter(Boolean);
+      parts.pop();
+      loadFiles(parts.join("/"));
+    };
+    document.getElementById("btnInbox").onclick = () => loadFiles("inbox");
+    document.getElementById("btnMimoFolder").onclick = () => {
+      const p = currentPath ? `${window.__project}\\${currentPath.replace(/\//g, "\\")}` : window.__project;
+      askMimo(`请查看文件夹 ${p} 里的内容，说明它是什么，并按需修改`);
+    };
+
+    // send a message to mimo through the chat tab
+    function askMimo(text) {
+      switchTab("chat");
+      chatText.value = text;
+      chatText.focus();
+    }
+
+    // ---- chat ----
+    const chatLog = document.getElementById("chatLog");
+    const chatText = document.getElementById("chatText");
+    const autoSpeakEl = document.getElementById("autoSpeak");
+    let chatSessionId = "";
+    let chatBusy = false;
+    let speakingBubble = null;
+    let onTtsStateProxy = null;
+
+    function addMsg(role, text) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + role;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      const body = document.createElement("div");
+      body.className = "body";
+      body.textContent = text || "";
+      bubble.appendChild(body);
+      wrap.appendChild(bubble);
+      chatLog.appendChild(wrap);
+      chatLog.scrollTop = chatLog.scrollHeight;
+      return { wrap, bubble, body };
+    }
+
+    function attachActions(node, getText) {
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "🔊 朗读";
+      btn.onclick = () => {
+        if (speakingBubble === btn) { stopTts(); return; }
+        speakingBubble = btn;
+        onTtsStateProxy = (playing) => {
+          btn.classList.toggle("speaking", playing);
+          btn.textContent = playing ? "⏹ 停止" : "🔊 朗读";
+          if (!playing && speakingBubble === btn) speakingBubble = null;
+        };
+        speak(getText(), chatVoice.value, (p) => onTtsStateProxy && onTtsStateProxy(p));
+      };
+      const cost = document.createElement("span");
+      cost.className = "cost";
+      actions.appendChild(btn);
+      actions.appendChild(cost);
+      node.bubble.appendChild(actions);
+      return { actions, cost };
+    }
+
+    function addSys(text) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg sys";
+      const b = document.createElement("div");
+      b.className = "bubble";
+      b.textContent = text;
+      wrap.appendChild(b);
+      chatLog.appendChild(wrap);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    async function sendChat() {
+      const text = chatText.value.trim();
+      if (!text || chatBusy) return;
+      chatBusy = true;
+      chatText.value = "";
+      document.getElementById("btnChatSend").disabled = true;
+
+      addMsg("user", text);
+      const node = addMsg("assistant", "");
+      const bodyEl = node.body;
+      const actions = attachActions(node, () => bodyEl.textContent);
+      const toolsEl = document.createElement("div");
+      toolsEl.className = "tools";
+      node.bubble.appendChild(toolsEl);
+
+      let acc = "";
+      let firstChunk = true;
+      const thinking = document.createElement("span");
+      thinking.className = "thinking";
+      thinking.textContent = "思考中…";
+      node.bubble.insertBefore(thinking, actions.actions);
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, sessionId: chatSessionId }),
+        });
+        if (!res.ok) {
+          let msg = "HTTP " + res.status;
+          try { msg = (await res.json()).error || msg; } catch {}
+          throw new Error(msg);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+          for (const line of lines) {
+            const s = line.trim();
+            if (!s) continue;
+            let ev;
+            try { ev = JSON.parse(s); } catch { continue; }
+            if (ev.type === "text") {
+              if (firstChunk && thinking.parentNode) thinking.remove();
+              firstChunk = false;
+              acc += ev.text;
+              bodyEl.textContent = acc;
+              chatLog.scrollTop = chatLog.scrollHeight;
+            } else if (ev.type === "tool") {
+              if (firstChunk && thinking.parentNode) thinking.remove();
+              firstChunk = false;
+              toolsEl.textContent = (toolsEl.textContent ? toolsEl.textContent + " · " : "工具: ") + ev.tool + (ev.state ? `(${ev.state})` : "");
+            } else if (ev.type === "error") {
+              if (thinking.parentNode) thinking.remove();
+              addSys("错误: " + ev.message);
+            } else if (ev.type === "done") {
+              if (ev.sessionId) chatSessionId = ev.sessionId;
+              if (thinking.parentNode) thinking.remove();
+              if (ev.cost) actions.cost.textContent = "¥" + Number(ev.cost).toFixed(4);
+            }
+          }
+        }
+      } catch (e) {
+        if (thinking.parentNode) thinking.remove();
+        addSys("失败: " + (e.message || e));
+      } finally {
+        if (thinking.parentNode) thinking.remove();
+        chatBusy = false;
+        document.getElementById("btnChatSend").disabled = false;
+        chatText.focus();
+      }
+
+      if (!acc.trim()) { addSys("（本次没有文本输出）"); return; }
+      if (autoSpeakEl.checked) {
+        speakingBubble = actions.actions.querySelector("button");
+        speak(acc, chatVoice.value, (p) => {
+          const b = actions.actions.querySelector("button");
+          b.classList.toggle("speaking", p);
+          b.textContent = p ? "⏹ 停止" : "🔊 朗读";
+          if (!p && speakingBubble === b) speakingBubble = null;
+        });
+      }
+    }
+
+    document.getElementById("btnChatSend").onclick = sendChat;
+    chatText.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    });
+
+    // ---- phone capture / ingest into <project>/inbox ----
+    const cameraInput = document.getElementById("cameraInput");
+    const imgInput = document.getElementById("imgInput");
+
+    document.getElementById("btnCamera").onclick = () => cameraInput.click();
+    document.getElementById("btnPickImg").onclick = () => imgInput.click();
+    cameraInput.onchange = () => ingestFiles(cameraInput.files, cameraInput);
+    imgInput.onchange = () => ingestFiles(imgInput.files, imgInput);
+
+    async function ingestFiles(files, inputEl) {
+      if (!files || !files.length) return;
+      const fd = new FormData();
+      for (const f of files) fd.append("file", f, f.name);
+      setTtsMsg(`正在上传 ${files.length} 个文件…`);
+      try {
+        const r = await fetch("/api/ingest", { method: "POST", body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+        if (inputEl) inputEl.value = "";
+        const paths = d.files.map((f) => f.path);
+        setTtsMsg(`已存入 ${d.dir}/：${paths.join(", ")}`, "ok");
+        const names = paths.map((p) => p.split("/").pop()).join("、");
+        askMimoThenSend(`请处理我刚上传到 ${d.dir}/ 的内容：${names}（路径 ${paths.join(", ")}）`);
+      } catch (e) {
+        setTtsMsg("上传失败: " + (e.message || e), "err");
+      }
+    }
+
+    document.getElementById("btnNote").onclick = async () => {
+      const text = window.prompt("输入要保存到项目并让 mimo 处理的文字：");
+      if (!text || !text.trim()) return;
+      setTtsMsg("正在保存文字…");
+      try {
+        const r = await fetch("/api/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text.trim() }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+        const p = d.files[0].path;
+        setTtsMsg(`已保存 ${p}`, "ok");
+        askMimoThenSend(`请处理我刚上传的 ${p} 里的内容`);
+      } catch (e) {
+        setTtsMsg("保存失败: " + (e.message || e), "err");
+      }
+    };
+
+    function askMimoThenSend(text) {
+      switchTab("chat");
+      chatText.value = text;
+      if (chatBusy) { setTtsMsg("上一轮还在处理，请稍后手动发送", "err"); return; }
+      sendChat();
+    }
+    document.getElementById("btnChatStop").onclick = () => stopTts();
+    document.getElementById("btnChatNew").onclick = () => {
+      chatSessionId = "";
+      chatLog.innerHTML = "";
+      addSys("已开始新会话（下一条消息将开启新的 mimo 会话）");
+    };
+
+    fetch("/api/chat-status")
+      .then((r) => r.json())
+      .then((s) => {
+        if (!s.available) addSys("提示：未找到 mimo CLI，对话功能不可用。");
+        else addSys(`已就绪 · 项目 ${s.project}`);
+      })
+      .catch(() => {});
+
+    loadFiles("");
+  </script>
+</body>
+</html>

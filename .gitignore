@@ -1,0 +1,23 @@
+# secrets / local config
+tts.config.json
+
+# deps
+node_modules/
+.mimocode/
+
+# runtime
+uploads/
+inbox/
+*.log
+server.out.log
+server.err.log
+
+# machine-specific project picker state
+projects.json
+
+# unrelated personal scripts kept on disk only
+_organize.ps1
+
+# OS
+Thumbs.db
+desktop.ini
