@@ -1,6 +1,6 @@
 # mimo-web · MiMoCode 手机/局域网网页端
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-ff4081.svg)](LICENSE)
 
 把电脑上的 **MiMoCode（mimo CLI）** 开到局域网里：手机、平板、别的电脑，
 在浏览器打开一个地址，就能直接对着电脑上的项目目录聊天改文件、敲终端、
@@ -211,4 +211,6 @@ project: D:\website\my-project
 
 ## 📄 License
 
-MIT —— 可自由使用、修改、分发。
+[PolyForm Noncommercial License 1.0.0](LICENSE) —— 可自由使用、修改、分发，**禁止商业用途**（个人、研究、教育、慈善等非商业场景允许）。
+
+Required Notice: Copyright jovi82 (https://github.com/jovi82/mimo-web)
